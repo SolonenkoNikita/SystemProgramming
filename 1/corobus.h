@@ -2,12 +2,7 @@
 
 #include <stddef.h>
 
-/**
- * Here you should specify which bonuses do you want via the
- * macros. It is important to define these macros here, in the
- * header, because it is used by tests.
- */
-#define NEED_BROADCAST 0
+#define NEED_BROADCAST 1
 #define NEED_BATCH 0
 
 enum coro_bus_error_code {
@@ -53,8 +48,7 @@ int coro_bus_channel_open(struct coro_bus *bus, size_t size_limit);
  * @param bus Bus to destroy the channel in.
  * @param channel Descriptor of the channel to destroy.
  */
-void
-coro_bus_channel_close(struct coro_bus *bus, int channel);
+void coro_bus_channel_close(struct coro_bus *bus, int channel);
 
 /**
  * Send the given message to the specified channel. If the channel
@@ -98,8 +92,7 @@ int coro_bus_try_send(struct coro_bus *bus, int channel, unsigned data);
  * @retval -1 Error. Check coro_bus_errno() for reason.
  *     - CORO_BUS_ERR_NO_CHANNEL - the channel doesn't exist.
  */
-int
-coro_bus_recv(struct coro_bus *bus, int channel, unsigned *data);
+int coro_bus_recv(struct coro_bus *bus, int channel, unsigned *data);
 
 /**
  * Same as coro_bus_recv(), but if the channel is empty, the
@@ -115,11 +108,10 @@ coro_bus_recv(struct coro_bus *bus, int channel, unsigned *data);
  *     - CORO_BUS_ERR_NO_CHANNEL - the channel doesn't exist.
  *     - CORO_BUS_ERR_WOULD_BLOCK - the channel is empty.
  */
-int
-coro_bus_try_recv(struct coro_bus *bus, int channel, unsigned *data);
+int coro_bus_try_recv(struct coro_bus *bus, int channel, unsigned *data);
 
 
-#if NEED_BROADCAST /* Bonus 1 */
+#if NEED_BROADCAST 
 
 /**
  * Send the given message to all the registered channels at once.
@@ -150,7 +142,7 @@ coro_bus_broadcast(struct coro_bus *bus, unsigned data);
 int
 coro_bus_try_broadcast(struct coro_bus *bus, unsigned data);
 
-#endif /* Bonus 1 */
+#endif 
 
 #if NEED_BATCH /* Bonus 2 */
 

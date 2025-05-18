@@ -111,11 +111,11 @@ test_basic(void)
 	unit_check(c1 >= 0, "channel is open");
 
 	unit_check(coro_bus_send(bus, c1, 123) == 0, "send");
-	/*unsigned data = 0;
+	unsigned data = 0;
 	unit_check(coro_bus_recv(bus, c1, &data) == 0, "recv");
 	unit_check(data == 123, "result");
 
-	coro_bus_channel_close(bus, c1);*/
+	coro_bus_channel_close(bus, c1);
 	coro_bus_delete(bus);
 	unit_test_finish();
 }

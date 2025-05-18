@@ -38,13 +38,13 @@ static void data_vector_push_back(struct data_vector* vector, unsigned data)
     vector->data[vector->size++] = data;
 }
 
-/*static unsigned data_vector_pop_front(struct data_vector* vector)
+static unsigned data_vector_pop_front(struct data_vector* vector)
 {
     assert(vector->size > 0);
     unsigned data = vector->data[0];
     memmove(vector->data, vector->data + 1, --vector->size * sizeof(unsigned));
     return data;
-}*/
+}
 
 /**
  * One coroutine waiting to be woken up in a list of other
@@ -131,7 +131,7 @@ struct coro_bus* coro_bus_new(void)
 
 void coro_bus_delete(struct coro_bus* bus)
 {
-	assert(bus != NULL);
+	assert(bus);
 	for (int i = 0; i < bus->channel_count; ++i) 
 	{
         if (bus->channels[i]) 
@@ -147,9 +147,9 @@ void coro_bus_delete(struct coro_bus* bus)
 
 static void init(struct coro_bus* bus, size_t size_limit, int i) 
 {
-	assert(bus != NULL);
+	assert(bus);
 	struct coro_bus_channel* ch = (struct coro_bus_channel*)malloc(sizeof(*ch));
-	assert(ch != NULL);
+	assert(ch);
 	data_vector_init(&ch->data, size_limit);
 	ch->size_limit = size_limit;
 	rlist_create(&ch->send_queue.coros);
@@ -160,7 +160,7 @@ static void init(struct coro_bus* bus, size_t size_limit, int i)
 
 int coro_bus_channel_open(struct coro_bus* bus, size_t size_limit)
 {
-	assert(bus != NULL);
+	assert(bus);
     for (int i = 0; i < bus->channel_count; ++i) 
 	{
         if (!bus->channels[i]) 
@@ -175,38 +175,37 @@ int coro_bus_channel_open(struct coro_bus* bus, size_t size_limit)
     return index;
 }
 
-void
-coro_bus_channel_close(struct coro_bus *bus, int channel)
+void coro_bus_channel_close(struct coro_bus* bus, int channel)
 {
-	/* IMPLEMENT THIS FUNCTION */
-	(void)bus;
-	(void)channel;
-	/*
-	 * Be very attentive here. What happens, if the channel is
-	 * closed while there are coroutines waiting on it? For
-	 * example, the channel was empty, and some coros were
-	 * waiting on its recv_queue.
-	 *
-	 * If you wakeup those coroutines and just delete the
-	 * channel right away, then those waiting coroutines might
-	 * on wakeup try to reference invalid memory.
-	 *
-	 * Can happen, for example, if you use an intrusive list
-	 * (rlist), delete the list itself (by deleting the
-	 * channel), and then the coroutines on wakeup would try
-	 * to remove themselves from the already destroyed list.
-	 *
-	 * Think how you could address that. Remove all the
-	 * waiters from the list before freeing it? Yield this
-	 * coroutine after waking up the waiters but before
-	 * freeing the channel, so the waiters could safely leave?
-	 */
+	assert(bus);
+	if(channel < 0 || channel >= bus->channel_count || !bus->channels[channel])
+	{
+		coro_bus_errno_set(CORO_BUS_ERR_NO_CHANNEL);
+		return;
+	}
+	struct coro_bus_channel* ch = bus->channels[channel];
+	while (!rlist_empty(&ch->send_queue.coros)) 
+	{
+        struct wakeup_entry* entry = rlist_first_entry(&ch->send_queue.coros, struct wakeup_entry, base);
+		rlist_del_entry(entry, base);
+        coro_wakeup(entry->coro);
+    }
+
+    while (!rlist_empty(&ch->recv_queue.coros)) 
+	{
+        struct wakeup_entry* entry = rlist_first_entry(&ch->recv_queue.coros, struct wakeup_entry, base);
+		rlist_del_entry(entry, base);
+        coro_wakeup(entry->coro);
+    }
+	data_vector_destroy(&ch->data);
+    free(ch);
+    bus->channels[channel] = NULL;
+    coro_bus_errno_set(CORO_BUS_ERR_NONE);
 }
 
 int coro_bus_send(struct coro_bus* bus, int channel, unsigned data)
 {
-	int true_value = 1;
-	while(true_value) 
+	while(true) 
 	{
 		int response = coro_bus_try_send(bus, channel, data);
 		if(response == 0) 
@@ -225,8 +224,8 @@ int coro_bus_send(struct coro_bus* bus, int channel, unsigned data)
 
 int coro_bus_try_send(struct coro_bus* bus, int channel, unsigned data)
 {
-	assert(bus != NULL);
-	if (channel < 0 || channel >= bus->channel_count || bus->channels[channel] == NULL) 
+	assert(bus);
+	if (channel < 0 || channel >= bus->channel_count || !bus->channels[channel]) 
 	{
         coro_bus_errno_set(CORO_BUS_ERR_NO_CHANNEL);
         return -1;
@@ -243,28 +242,44 @@ int coro_bus_try_send(struct coro_bus* bus, int channel, unsigned data)
 	return 0;
 }
 
-int
-coro_bus_recv(struct coro_bus *bus, int channel, unsigned *data)
+int coro_bus_try_recv(struct coro_bus* bus, int channel, unsigned* data)
 {
-	/* IMPLEMENT THIS FUNCTION */
-	(void)bus;
-	(void)channel;
-	(void)data;
-	coro_bus_errno_set(CORO_BUS_ERR_NOT_IMPLEMENTED);
-	return -1;
+	assert(bus);
+    if (channel < 0 || channel >= bus->channel_count || !bus->channels[channel]) 
+	{
+        coro_bus_errno_set(CORO_BUS_ERR_NO_CHANNEL);
+        return -1;
+    }
+    struct coro_bus_channel* ch = bus->channels[channel];
+    if (ch->data.size == 0) 
+	{
+        coro_bus_errno_set(CORO_BUS_ERR_WOULD_BLOCK);
+        return -1;
+    }
+    *data = data_vector_pop_front(&ch->data);
+    wakeup_queue_wakeup_first(&ch->send_queue);
+    coro_bus_errno_set(CORO_BUS_ERR_NONE);
+    return 0;
 }
 
-int
-coro_bus_try_recv(struct coro_bus *bus, int channel, unsigned *data)
+int coro_bus_recv(struct coro_bus *bus, int channel, unsigned *data)
 {
-	/* IMPLEMENT THIS FUNCTION */
-	(void)bus;
-	(void)channel;
-	(void)data;
-	coro_bus_errno_set(CORO_BUS_ERR_NOT_IMPLEMENTED);
-	return -1;
+    while (true) 
+	{
+        int rc = coro_bus_try_recv(bus, channel, data);
+        if (rc == 0)
+            return 0;
+		if(coro_bus_errno() == CORO_BUS_ERR_NO_CHANNEL) 
+			return -1;
+        struct coro_bus_channel *ch = bus->channels[channel];
+        struct wakeup_entry entry;
+        entry.coro = coro_this();
+        rlist_add_tail_entry(&ch->recv_queue.coros, &entry, base);
+        coro_suspend();
+        rlist_del_entry(&entry, base);
+    }
+	return 0;
 }
-
 
 #if NEED_BROADCAST
 
