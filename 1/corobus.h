@@ -125,8 +125,7 @@ int coro_bus_try_recv(struct coro_bus *bus, int channel, unsigned *data);
  * @retval -1 Error. Check coro_bus_errno() for reason.
  *     - CORO_BUS_ERR_NO_CHANNEL - no channels in the bus.
  */
-int
-coro_bus_broadcast(struct coro_bus *bus, unsigned data);
+int coro_bus_broadcast(struct coro_bus *bus, unsigned data);
 
 /**
  * Same as coro_bus_broadcast(), but if any of the channels are
@@ -139,8 +138,7 @@ coro_bus_broadcast(struct coro_bus *bus, unsigned data);
  *     - CORO_BUS_ERR_NO_CHANNEL - no channels in the bus.
  *     - CORO_BUS_ERR_WOULD_BLOCK - at least one channel is full.
  */
-int
-coro_bus_try_broadcast(struct coro_bus *bus, unsigned data);
+int coro_bus_try_broadcast(struct coro_bus *bus, unsigned data);
 
 #endif 
 
