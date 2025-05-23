@@ -20,7 +20,7 @@ struct data_vector
 
 static void data_vector_init(struct data_vector* vector, size_t capacity)
 {
-	assert(vector != NULL);
+	assert(vector);
     vector->capacity = capacity;
     vector->size = 0;
     vector->data = (unsigned*) malloc(capacity * sizeof(unsigned));
@@ -28,18 +28,20 @@ static void data_vector_init(struct data_vector* vector, size_t capacity)
 
 static void data_vector_destroy(struct data_vector* vector)
 {
-	assert(vector != NULL);
+	assert(vector);
     free(vector->data);
 }
 
 static void data_vector_push_back(struct data_vector* vector, unsigned data)
 {
+	assert(vector);
     assert(vector->size < vector->capacity);
     vector->data[vector->size++] = data;
 }
 
 static unsigned data_vector_pop_front(struct data_vector* vector)
 {
+	assert(vector);
     assert(vector->size > 0);
     unsigned data = vector->data[0];
     memmove(vector->data, vector->data + 1, --vector->size * sizeof(unsigned));
@@ -79,7 +81,7 @@ wakeup_queue_suspend_this(struct wakeup_queue *queue)
 
 static void wakeup_queue_wakeup_first(struct wakeup_queue* queue)
 {
-	assert(queue != NULL);
+	assert(queue);
     if (!rlist_empty(&queue->coros)) 
 	{
         struct wakeup_entry* entry = rlist_first_entry(&queue->coros, struct wakeup_entry, base);
@@ -376,16 +378,10 @@ coro_bus_send_v(struct coro_bus *bus, int channel, const unsigned *data, unsigne
 	return -1;
 }
 
-int
-coro_bus_try_send_v(struct coro_bus *bus, int channel, const unsigned *data, unsigned count)
+int coro_bus_try_send_v(struct coro_bus* bus, int channel, const unsigned* data, unsigned count)
 {
-	/* IMPLEMENT THIS FUNCTION */
-	(void)bus;
-	(void)channel;
-	(void)data;
-	(void)count;
-	coro_bus_errno_set(CORO_BUS_ERR_NOT_IMPLEMENTED);
-	return -1;
+	assert(bus);
+	
 }
 
 int

@@ -3,7 +3,7 @@
 #include <stddef.h>
 
 #define NEED_BROADCAST 1
-#define NEED_BATCH 0
+#define NEED_BATCH 1
 
 enum coro_bus_error_code {
 	CORO_BUS_ERR_NONE = 0,
@@ -142,7 +142,7 @@ int coro_bus_try_broadcast(struct coro_bus *bus, unsigned data);
 
 #endif 
 
-#if NEED_BATCH /* Bonus 2 */
+#if NEED_BATCH 
 
 /**
  * Same as coro_bus_send(), but can submit multiple messages at
@@ -180,9 +180,8 @@ coro_bus_send_v(struct coro_bus *bus, int channel,
  *     - CORO_BUS_ERR_NO_CHANNEL - the channel doesn't exist.
  *     - CORO_BUS_ERR_WOULD_BLOCK - the channel is full.
  */
-int
-coro_bus_try_send_v(struct coro_bus *bus, int channel,
-	const unsigned *data, unsigned count);
+int coro_bus_try_send_v(struct coro_bus* bus, int channel,
+	const unsigned* data, unsigned count);
 
 /**
  * Same as coro_bus_recv(), but can receive multiple messages at
@@ -226,4 +225,4 @@ int
 coro_bus_try_recv_v(struct coro_bus *bus, int channel,
 	unsigned *data, unsigned capacity);
 
-#endif /* Bonus 2 */
+#endif 

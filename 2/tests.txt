@@ -1,4 +1,4 @@
-######## Section base
+######## Section baseq
 
 ----# Test { make a dir --------------------------------------------------------
 mkdir tmp

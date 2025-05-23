@@ -5,13 +5,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-struct parser {
+struct parser 
+{
 	char *buffer;
 	uint32_t size;
 	uint32_t capacity;
 };
 
-enum token_type {
+enum token_type 
+{
 	TOKEN_TYPE_NONE,
 	TOKEN_TYPE_STR,
 	TOKEN_TYPE_NEW_LINE,
@@ -23,15 +25,15 @@ enum token_type {
 	TOKEN_TYPE_BACKGROUND,
 };
 
-struct token {
+struct token 
+{
 	enum token_type type;
 	char *data;
 	uint32_t size;
 	uint32_t capacity;
 };
 
-static char *
-token_strdup(const struct token *t)
+static char* token_strdup(const struct token* t)
 {
 	assert(t->type == TOKEN_TYPE_STR);
 	assert(t->size > 0);
@@ -41,8 +43,7 @@ token_strdup(const struct token *t)
 	return res;
 }
 
-static void
-token_append(struct token *t, char c)
+static void token_append(struct token *t, char c)
 {
 	if (t->size == t->capacity) {
 		t->capacity = (t->capacity + 1) * 2;
@@ -53,15 +54,13 @@ token_append(struct token *t, char c)
 	t->data[t->size++] = c;
 }
 
-static void
-token_reset(struct token *t)
+static void token_reset(struct token *t)
 {
 	t->size = 0;
 	t->type = TOKEN_TYPE_NONE;
 }
 
-static void
-command_append_arg(struct command *cmd, char *arg)
+static void command_append_arg(struct command *cmd, char *arg)
 {
 	if (cmd->arg_count == cmd->arg_capacity) {
 		cmd->arg_capacity = (cmd->arg_capacity + 1) * 2;
@@ -72,8 +71,7 @@ command_append_arg(struct command *cmd, char *arg)
 	cmd->args[cmd->arg_count++] = arg;
 }
 
-void
-command_line_delete(struct command_line *line)
+void command_line_delete(struct command_line *line)
 {
 	while (line->head != NULL) {
 		struct expr *e = line->head;
@@ -91,8 +89,7 @@ command_line_delete(struct command_line *line)
 	free(line);
 }
 
-static void
-command_line_append(struct command_line *line, struct expr *e)
+static void command_line_append(struct command_line *line, struct expr *e)
 {
 	if (line->head == NULL)
 		line->head = e;
@@ -101,8 +98,7 @@ command_line_append(struct command_line *line, struct expr *e)
 	line->tail = e;
 }
 
-struct parser *
-parser_new(void)
+struct parser* parser_new(void)
 {
 	return calloc(1, sizeof(struct parser));
 }
