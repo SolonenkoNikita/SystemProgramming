@@ -8,7 +8,7 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
-void print_line(const struct command_line* line)
+/*void print_line(const struct command_line* line)
 {
 	const struct expr* head = line->head;
 	while(head)
@@ -21,7 +21,7 @@ void print_line(const struct command_line* line)
 		printf("==================\n");
 		head = head->next;
 	}
-}
+}*/
 
 static void execute_cd(const struct command* cmd)
 {
@@ -29,7 +29,7 @@ static void execute_cd(const struct command* cmd)
 	if(cmd->arg_count < 1)
 	{
 		fprintf(stderr, "cd: missing argument\n");
-		return;
+		exit(EXIT_FAILURE);	
 	}
 	if(chdir(cmd->args[0]))
 		perror("Error");
@@ -44,18 +44,49 @@ static void execute_exit(const struct command* cmd)
     exit(status);
 }
 
+/*static void execute_pipeline(const struct command_line* line)
+{
+	print_line(line);
+}*/
+
 static void execute_command_line(const struct command_line* line)
 {
 	assert(line);
 	assert(line->head);
-	print_line(line);
-	if(line->head->type == EXPR_TYPE_PIPE)
+	int is_in_pipeline = !isatty(STDOUT_FILENO); // for correct exit > l || exit | ls || exit
+	if(line->head->next)
 	{
-		printf("!!!!");
+		//execute_pipeline(line);
 	}
 	if(line->head->type == EXPR_TYPE_COMMAND)
 	{
+		
 		const struct command* cmd = &line->head->cmd;
+		if(!strcmp(cmd->exe, "cd") )
+		{
+			execute_cd(cmd);
+			return;
+		}
+		if (!strcmp(cmd->exe, "exit") && !is_in_pipeline) 
+		{
+			execute_exit(cmd);
+			return;
+		}
+		int fd = STDOUT_FILENO;
+		if(line->out_type != OUTPUT_TYPE_STDOUT)
+		{
+			int flags = O_WRONLY | O_CREAT;
+			if(line->out_type == OUTPUT_TYPE_FILE_APPEND)
+				flags = flags | O_APPEND;
+			else
+				flags = flags | O_TRUNC;
+			fd = open(line->out_file, flags, 0644);
+			if(fd < 0)
+			{
+				perror("open");
+				return;
+			}
+		}
 		pid_t pid = fork();
 		if(pid < 0)
 		{
@@ -64,13 +95,17 @@ static void execute_command_line(const struct command_line* line)
 		}
 		else if(pid == 0)
 		{
-			if(!strcmp(cmd->exe, "cd"))
+			if (!strcmp(cmd->exe, "exit")) 
+                execute_exit(cmd);
+			if(fd != STDOUT_FILENO)
 			{
-				execute_cd(cmd);
-				return;
+				if(dup2(fd, STDOUT_FILENO) < 0)
+				{
+					perror("dup2");
+                    exit(EXIT_FAILURE);
+				}
+				close(fd);
 			}
-			else if(!strcmp(cmd->exe, "exit"))
-				execute_exit(cmd);
 			uint32_t arg_count = cmd->arg_count;
 			char** args = (char**) malloc((arg_count + 2) * sizeof(char*));
 			args[0] = cmd->exe;
@@ -80,43 +115,21 @@ static void execute_command_line(const struct command_line* line)
 			execvp(cmd->exe, args);
 			perror("execvp error");
 			free(args);
+			exit(EXIT_FAILURE);
 		}
 		else if(pid > 0) 
 		{
-			//int status;
-			waitpid(pid, NULL, 0);
-			//printf("STATUS%d", status);
-		}
-	}
-	if (line->out_type == OUTPUT_TYPE_STDOUT) {
-		printf("stdout\n");
-	} else if (line->out_type == OUTPUT_TYPE_FILE_NEW) {
-		printf("new file - \"%s\"\n", line->out_file);
-	} else if (line->out_type == OUTPUT_TYPE_FILE_APPEND) {
-		printf("append file - \"%s\"\n", line->out_file);
-	} else {
-		assert(false);
-	}
-	printf("Expressions:\n");
-	const struct expr *e = line->head;
-	while (e != NULL) {
-		if (e->type == EXPR_TYPE_COMMAND) {
-			printf("\tCommand: %s", e->cmd.exe);
-			for (uint32_t i = 0; i < e->cmd.arg_count; ++i)
-				printf(" %s", e->cmd.args[i]);
-			printf("\n");
-		} else if (e->type == EXPR_TYPE_PIPE) {
-			printf("\tPIPE\n");
-		} else if (e->type == EXPR_TYPE_AND) {
-			printf("\tAND\n");
-		} else if (e->type == EXPR_TYPE_OR) {
-			printf("\tOR\n");
-		} else {
-			assert(false);
-		}
-		e = e->next;
+			if(fd != STDOUT_FILENO)
+				close(fd);
+			int status;
+            waitpid(pid, &status, 0);
+            
+            if (!strcmp(cmd->exe, "exit") && is_in_pipeline)
+                exit(WIFEXITED(status) ? WEXITSTATUS(status) : 1);
+        }
 	}
 }
+
 
 int main(void)
 {
@@ -138,19 +151,6 @@ int main(void)
 				printf("Error: %d\n", (int)err);
 				continue;
 			}
-			/*struct expr* exp = line->head;
-			while(exp)
-			{
-				if(exp->type == EXPR_TYPE_COMMAND)
-				{
-					for(int i = 0; i < (int) exp->cmd.arg_count; ++i)
-					{
-						printf("%s\n", exp->cmd.args[i]);
-					}
-					
-				}
-				exp = exp->next;
-			} */
 			execute_command_line(line);
 			command_line_delete(line);
 		}

@@ -1,0 +1,11 @@
+Makefile
+__pycache__
+checker.py
+file.txt
+mybash
+parser.c
+parser.h
+parser_test.c
+solution.c
+test_parser.py
+tests.txt
