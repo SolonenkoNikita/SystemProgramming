@@ -164,7 +164,7 @@ static void execute_pipeline(const struct command_line* line)
     }
 
     if (last_pid > 0) 
-        waitpid(pid, NULL, 0);
+        waitpid(last_pid, NULL, 0);
 }
 
 static void execute_command_line(const struct command_line* line)
