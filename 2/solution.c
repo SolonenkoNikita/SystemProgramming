@@ -1,6 +1,7 @@
 #include "parser.h"
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
@@ -8,20 +9,30 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
-/*void print_line(const struct command_line* line)
+static char** build_args(const struct command* cmd)
 {
-	const struct expr* head = line->head;
-	while(head)
-	{
-		printf("==================\nCommand = %s\n", head->cmd.exe);
-		for(uint32_t i = 0; i < head->cmd.arg_count; ++i)
-		{
-			printf("Args:%s\n", head->cmd.args[i]);
-		}
-		printf("==================\n");
-		head = head->next;
-	}
-}*/
+	assert(cmd);
+	char** args = (char**) malloc((cmd->arg_count + 2) * sizeof(char*));
+    args[0] = cmd->exe;
+    for (uint32_t i = 0; i < cmd->arg_count; ++i) 
+        args[i + 1] = cmd->args[i];
+    args[cmd->arg_count + 1] = NULL;
+    return args;
+}
+
+static bool open_fd(int* fd, const struct command_line* line)
+{
+	assert(line);
+	int flags = O_WRONLY | O_CREAT;
+	if (line->out_type == OUTPUT_TYPE_FILE_APPEND)
+		flags |= O_APPEND;
+	else
+		flags |= O_TRUNC;
+	*fd = open(line->out_file, flags, 0644);
+	if (*fd < 0) 
+		return false;
+	return true;
+}
 
 static void execute_cd(const struct command* cmd)
 {
@@ -33,6 +44,7 @@ static void execute_cd(const struct command* cmd)
 	}
 	if(chdir(cmd->args[0]))
 		perror("Error");
+	
 }
 
 static void execute_exit(const struct command* cmd)
@@ -44,23 +56,129 @@ static void execute_exit(const struct command* cmd)
     exit(status);
 }
 
-/*static void execute_pipeline(const struct command_line* line)
+static void execute_pipeline(const struct command_line* line)
 {
-	print_line(line);
-}*/
+	assert(line);
+	int prev_pipe[2] = {-1, -1};
+	const struct expr* head = line->head;
+	pid_t pid;
+	int last_pid = -1;
+	while(head && head->type == EXPR_TYPE_COMMAND)
+	{
+		int next_pipe[2] = {-1, -1};
+		bool is_last_command = (!head->next) || (head->next->type != EXPR_TYPE_PIPE);
+		if (!is_last_command) 
+		{
+            if (pipe(next_pipe) < 0) 
+			{
+                perror("pipe");
+                exit(EXIT_FAILURE);
+            }
+        }
+		pid = fork();
+		if (pid < 0)
+        {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        }
+		else if (pid == 0) 
+		{ 
+			if (prev_pipe[0] != -1)
+            {
+                if (dup2(prev_pipe[0], STDIN_FILENO) < 0)
+                {
+                    perror("dup2 stdin");
+                    exit(EXIT_FAILURE);
+                }
+				close(prev_pipe[0]);
+                close(prev_pipe[1]);
+            }
+
+			if (is_last_command && line->out_type != OUTPUT_TYPE_STDOUT) 
+			{
+                int fd;
+				if(!open_fd(&fd, line))
+				{
+					perror("open");
+					exit(EXIT_FAILURE);
+				}
+                dup2(fd, STDOUT_FILENO);
+                close(fd);
+            }
+
+			else if (next_pipe[1] != -1)
+            {
+                if (dup2(next_pipe[1], STDOUT_FILENO) < 0)
+                {
+                    perror("dup2 stdout");
+                    exit(EXIT_FAILURE);
+                }
+                close(next_pipe[1]);
+            }
+
+			if (next_pipe[0] != -1) 
+				close(next_pipe[0]);
+
+			if(!strcmp(head->cmd.exe, "cd"))
+			{
+				execute_cd(&head->cmd);
+				exit(EXIT_SUCCESS);
+			}
+
+			if (!strcmp(head->cmd.exe, "exit")) 
+			{
+				execute_exit(&head->cmd);
+				exit(EXIT_SUCCESS);
+			}
+
+            char** args = build_args(&head->cmd);
+            execvp(head->cmd.exe, args);
+            perror("execvp");
+            free(args);
+            exit(EXIT_FAILURE);
+        }
+		else
+		{
+			if (prev_pipe[0] != -1) 
+			{
+                close(prev_pipe[0]);
+                close(prev_pipe[1]);
+            }
+
+			if (is_last_command) 
+                last_pid = pid;
+			
+			prev_pipe[0] = next_pipe[0];
+			prev_pipe[1] = next_pipe[1];
+			
+			head = head->next;
+            if (head && head->type == EXPR_TYPE_PIPE) 
+                head = head->next;
+		}
+    }
+
+	if (prev_pipe[0] != -1) 
+	{
+        close(prev_pipe[0]);
+        close(prev_pipe[1]);
+    }
+
+    if (last_pid > 0) 
+        waitpid(pid, NULL, 0);
+}
 
 static void execute_command_line(const struct command_line* line)
 {
 	assert(line);
 	assert(line->head);
 	int is_in_pipeline = !isatty(STDOUT_FILENO); // for correct exit > l || exit | ls || exit
-	if(line->head->next)
+	if(line->head->next && line->head->next->type == EXPR_TYPE_PIPE)
 	{
-		//execute_pipeline(line);
+		execute_pipeline(line);
+		return;
 	}
 	if(line->head->type == EXPR_TYPE_COMMAND)
 	{
-		
 		const struct command* cmd = &line->head->cmd;
 		if(!strcmp(cmd->exe, "cd") )
 		{
@@ -75,13 +193,7 @@ static void execute_command_line(const struct command_line* line)
 		int fd = STDOUT_FILENO;
 		if(line->out_type != OUTPUT_TYPE_STDOUT)
 		{
-			int flags = O_WRONLY | O_CREAT;
-			if(line->out_type == OUTPUT_TYPE_FILE_APPEND)
-				flags = flags | O_APPEND;
-			else
-				flags = flags | O_TRUNC;
-			fd = open(line->out_file, flags, 0644);
-			if(fd < 0)
+			if(!open_fd(&fd, line))
 			{
 				perror("open");
 				return;
@@ -106,12 +218,7 @@ static void execute_command_line(const struct command_line* line)
 				}
 				close(fd);
 			}
-			uint32_t arg_count = cmd->arg_count;
-			char** args = (char**) malloc((arg_count + 2) * sizeof(char*));
-			args[0] = cmd->exe;
-			for(uint32_t i = 0; i < arg_count; ++i)
-				args[i + 1] = cmd->args[i];
-			args[arg_count + 1] = NULL;
+			char** args = build_args(cmd);
 			execvp(cmd->exe, args);
 			perror("execvp error");
 			free(args);
@@ -129,7 +236,6 @@ static void execute_command_line(const struct command_line* line)
         }
 	}
 }
-
 
 int main(void)
 {
