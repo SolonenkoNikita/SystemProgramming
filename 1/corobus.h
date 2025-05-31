@@ -3,7 +3,7 @@
 #include <stddef.h>
 
 #define NEED_BROADCAST 1
-#define NEED_BATCH 1
+#define NEED_BATCH 0
 
 enum coro_bus_error_code {
 	CORO_BUS_ERR_NONE = 0,

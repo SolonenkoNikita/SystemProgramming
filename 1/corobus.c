@@ -124,7 +124,7 @@ void coro_bus_errno_set(enum coro_bus_error_code err)
 
 struct coro_bus* coro_bus_new(void)
 {
-	struct coro_bus* bus = (struct coro_bus*) malloc(sizeof(*bus));
+	struct coro_bus* bus = (struct coro_bus*) malloc(sizeof(struct coro_bus));
     bus->channel_count = 0;
     bus->channels = NULL;
 	coro_bus_errno_set(CORO_BUS_ERR_NONE); 
@@ -162,19 +162,21 @@ static void init(struct coro_bus* bus, size_t size_limit, int i)
 
 int coro_bus_channel_open(struct coro_bus* bus, size_t size_limit)
 {
-	assert(bus);
+    assert(bus);
     for (int i = 0; i < bus->channel_count; ++i) 
-	{
+    {
         if (!bus->channels[i]) 
-		{
-			init(bus, size_limit, i);
+        {
+            init(bus, size_limit, i);
             return i;
         }
     }
-    bus->channels = realloc(bus->channels, (++bus->channel_count) * sizeof(void*));
-    int index = bus->channel_count - 1;
-	init(bus, size_limit, index);
-    return index;
+    int new_index = bus->channel_count;
+    bus->channel_count++;
+    bus->channels = realloc(bus->channels, bus->channel_count * sizeof(void*));
+    bus->channels[new_index] = NULL;
+    init(bus, size_limit, new_index);
+    return new_index;
 }
 
 void coro_bus_channel_close(struct coro_bus* bus, int channel)

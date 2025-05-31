@@ -9,6 +9,8 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
+#define SIZEOF_PIPE 2
+
 static char** build_args(const struct command* cmd)
 {
 	assert(cmd);
@@ -56,192 +58,232 @@ static void execute_exit(const struct command* cmd)
     exit(status);
 }
 
-static void execute_pipeline(const struct command_line* line)
+static int execute_pipeline(const struct command_line* line) 
 {
-	assert(line);
-	int prev_pipe[2] = {-1, -1};
-	const struct expr* head = line->head;
-	pid_t pid;
-	int last_pid = -1;
-	while(head && head->type == EXPR_TYPE_COMMAND)
+    assert(line);
+    int prev_pipe[SIZEOF_PIPE] = {-1, -1};
+    const struct expr* head = line->head;
+    int status, exit_status = 0;
+    size_t child_count = 0;
+    size_t array_size = 32;
+
+    pid_t* array = (pid_t*) malloc(array_size * sizeof(pid_t));
+    if (!array) 
 	{
-		int next_pipe[2] = {-1, -1};
-		bool is_last_command = (!head->next) || (head->next->type != EXPR_TYPE_PIPE);
-		if (!is_last_command) 
+        perror("malloc");
+        return 1;
+    }
+
+    while (head && head->type == EXPR_TYPE_COMMAND) 
+	{
+        int next_pipe[SIZEOF_PIPE] = {-1, -1};
+        bool is_last_command = (!head->next) || (head->next->type != EXPR_TYPE_PIPE);
+
+        if (!is_last_command && pipe(next_pipe) < 0) 
 		{
-            if (pipe(next_pipe) < 0) 
+            perror("pipe");
+            free(array);
+            return 1;
+        }
+
+        if (child_count >= array_size) 
+		{
+            array_size *= 2;
+            pid_t* new_array = (pid_t*) realloc(array, array_size * sizeof(pid_t));
+            if (!new_array) 
 			{
-                perror("pipe");
-                exit(EXIT_FAILURE);
+                perror("realloc");
+                free(array);
+                return 1;
             }
+            array = new_array;
         }
-		pid = fork();
-		if (pid < 0)
-        {
+
+        pid_t pid = fork();
+        if (pid < 0) 
+		{
             perror("fork");
-            exit(EXIT_FAILURE);
+            free(array);
+            return 1;
         }
-		else if (pid == 0) 
-		{ 
-			if (prev_pipe[0] != -1)
-            {
-                if (dup2(prev_pipe[0], STDIN_FILENO) < 0)
-                {
-                    perror("dup2 stdin");
-                    exit(EXIT_FAILURE);
-                }
-				close(prev_pipe[0]);
+
+        else if (pid == 0) 
+		{
+            free(array); 
+            
+            if (prev_pipe[0] != -1) 
+			{
+                dup2(prev_pipe[0], STDIN_FILENO);
+                close(prev_pipe[0]);
                 close(prev_pipe[1]);
             }
 
-			if (is_last_command && line->out_type != OUTPUT_TYPE_STDOUT) 
+            if (!is_last_command) 
+			{
+                close(next_pipe[0]);
+                dup2(next_pipe[1], STDOUT_FILENO);
+                close(next_pipe[1]);
+            } 
+			else if (line->out_type != OUTPUT_TYPE_STDOUT)
 			{
                 int fd;
-				if(!open_fd(&fd, line))
+                if (!open_fd(&fd, line)) 
 				{
-					perror("open");
-					exit(EXIT_FAILURE);
-				}
+                    perror("open");
+                    exit(EXIT_FAILURE);
+                }
                 dup2(fd, STDOUT_FILENO);
                 close(fd);
             }
 
-			else if (next_pipe[1] != -1)
-            {
-                if (dup2(next_pipe[1], STDOUT_FILENO) < 0)
-                {
-                    perror("dup2 stdout");
-                    exit(EXIT_FAILURE);
-                }
-                close(next_pipe[1]);
+            if (next_pipe[0] != -1) 
+				close(next_pipe[0]);
+            if (next_pipe[1] != -1) 
+				close(next_pipe[1]);
+
+            if (!strcmp(head->cmd.exe, "cd")) 
+			{
+                execute_cd(&head->cmd);
+                exit(EXIT_SUCCESS);
             }
 
-			if (next_pipe[0] != -1) 
-				close(next_pipe[0]);
-
-			if(!strcmp(head->cmd.exe, "cd"))
-			{
-				execute_cd(&head->cmd);
-				exit(EXIT_SUCCESS);
-			}
-
-			if (!strcmp(head->cmd.exe, "exit")) 
-			{
-				execute_exit(&head->cmd);
-				exit(EXIT_SUCCESS);
-			}
+            if (!strcmp(head->cmd.exe, "exit")) 
+                execute_exit(&head->cmd);
 
             char** args = build_args(&head->cmd);
             execvp(head->cmd.exe, args);
             perror("execvp");
             free(args);
             exit(EXIT_FAILURE);
-        }
-		else
+        } 
+		else 
 		{
-			if (prev_pipe[0] != -1) 
+            array[child_count++] = pid;
+            if (prev_pipe[0] != -1) 
 			{
                 close(prev_pipe[0]);
                 close(prev_pipe[1]);
             }
 
-			if (is_last_command) 
-                last_pid = pid;
-			
-			prev_pipe[0] = next_pipe[0];
-			prev_pipe[1] = next_pipe[1];
-			
-			head = head->next;
-            if (head && head->type == EXPR_TYPE_PIPE) 
-                head = head->next;
-		}
+            if (!is_last_command) 
+			{
+                prev_pipe[0] = next_pipe[0];
+                prev_pipe[1] = next_pipe[1];
+            } 
+			else 
+			{	
+                if (next_pipe[0] != -1) 
+					close(next_pipe[0]);
+                if (next_pipe[1] != -1) 
+					close(next_pipe[1]);
+            }
+
+            head = is_last_command ? NULL : head->next->next;
+        }
     }
 
-	if (prev_pipe[0] != -1) 
+    if (prev_pipe[0] != -1) 
 	{
         close(prev_pipe[0]);
         close(prev_pipe[1]);
     }
 
-    if (last_pid > 0) 
-        waitpid(last_pid, NULL, 0);
+    for (size_t i = 0; i < child_count; ++i) 
+	{
+        if (i == child_count - 1) 
+		{
+            waitpid(array[i], &status, 0);
+            exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+        } 
+		else 
+            waitpid(array[i], NULL, 0);
+    }
+
+    free(array);
+    return exit_status;
 }
 
-static void execute_command_line(const struct command_line* line)
+static int execute_command_line(const struct command_line* line)
 {
-	assert(line);
-	assert(line->head);
-	int is_in_pipeline = !isatty(STDOUT_FILENO); // for correct exit > l || exit | ls || exit
-	if(line->head->next && line->head->next->type == EXPR_TYPE_PIPE)
+    assert(line);
+    assert(line->head);
+
+    if (line->head->next && line->head->next->type == EXPR_TYPE_PIPE) 
 	{
-		execute_pipeline(line);
-		return;
-	}
-	if(line->head->type == EXPR_TYPE_COMMAND)
+        int exit_code = execute_pipeline(line);
+        return exit_code;
+    }
+
+    if (line->head->type == EXPR_TYPE_COMMAND) 
 	{
-		const struct command* cmd = &line->head->cmd;
-		if(!strcmp(cmd->exe, "cd") )
+        const struct command* cmd = &line->head->cmd;
+
+        if (!strcmp(cmd->exe, "cd")) 
 		{
-			execute_cd(cmd);
-			return;
-		}
-		if (!strcmp(cmd->exe, "exit") && !is_in_pipeline) 
-		{
-			execute_exit(cmd);
-			return;
-		}
-		int fd = STDOUT_FILENO;
-		if(line->out_type != OUTPUT_TYPE_STDOUT)
-		{
-			if(!open_fd(&fd, line))
-			{
-				perror("open");
-				return;
-			}
-		}
-		pid_t pid = fork();
-		if(pid < 0)
-		{
-			perror("fork");
-			return;
-		}
-		else if(pid == 0)
-		{
-			if (!strcmp(cmd->exe, "exit")) 
-                execute_exit(cmd);
-			if(fd != STDOUT_FILENO)
-			{
-				if(dup2(fd, STDOUT_FILENO) < 0)
-				{
-					perror("dup2");
-                    exit(EXIT_FAILURE);
-				}
-				close(fd);
-			}
-			char** args = build_args(cmd);
-			execvp(cmd->exe, args);
-			perror("execvp error");
-			free(args);
-			exit(EXIT_FAILURE);
-		}
-		else if(pid > 0) 
-		{
-			if(fd != STDOUT_FILENO)
-				close(fd);
-			int status;
-            waitpid(pid, &status, 0);
-            
-            if (!strcmp(cmd->exe, "exit") && is_in_pipeline)
-                exit(WIFEXITED(status) ? WEXITSTATUS(status) : 1);
+            execute_cd(cmd);
+            return 0;
         }
-	}
+
+        if (!strcmp(cmd->exe, "exit")) 
+		{
+            int status = 0;
+            if (cmd->arg_count > 0)
+                status = atoi(cmd->args[0]);
+            exit(status);  
+        }
+
+        int fd = STDOUT_FILENO;
+        if (line->out_type != OUTPUT_TYPE_STDOUT) 
+		{
+            if (!open_fd(&fd, line)) 
+			{
+                perror("open");
+                return 1;
+            }
+        }
+
+        pid_t pid = fork();
+        if (pid < 0) 
+		{
+            perror("fork");
+            return 1;
+        } 
+		else if (pid == 0) 
+		{
+            if (fd != STDOUT_FILENO) 
+			{
+                dup2(fd, STDOUT_FILENO);
+                close(fd);
+            }
+
+            char** args = build_args(cmd);
+            execvp(cmd->exe, args);
+            perror("execvp error");
+            free(args);
+            exit(EXIT_FAILURE);
+        } 
+		else 
+		{
+            int status;
+            waitpid(pid, &status, 0);
+            if (fd != STDOUT_FILENO)
+                close(fd);
+
+            if (WIFEXITED(status))
+                return WEXITSTATUS(status);
+            else
+                return 1;  
+        }
+    }
+
+    return 0;  
 }
 
 int main(void)
 {
 	const size_t buf_size = 1024;
 	char buf[buf_size];
-	int rc;
+	int rc, exit_status = 0;
 	struct parser* p = parser_new();
 	while ((rc = read(STDIN_FILENO, buf, buf_size)) > 0) 
 	{
@@ -257,10 +299,11 @@ int main(void)
 				printf("Error: %d\n", (int)err);
 				continue;
 			}
-			execute_command_line(line);
+			exit_status = execute_command_line(line);
 			command_line_delete(line);
 		}
 	}
 	parser_delete(p);
-	return 0;
+	exit(exit_status);  
+    return exit_status;
 }
