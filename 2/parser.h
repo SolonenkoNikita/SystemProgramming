@@ -38,7 +38,6 @@ enum expr_type
 struct expr 
 {
 	enum expr_type type;
-	/** Valid if the type is COMMAND. */
 	struct command cmd;
 	struct expr* next;
 };
@@ -55,7 +54,6 @@ struct command_line
 	struct expr* head;
 	struct expr* tail;
 	enum output_type out_type;
-	/** Valid if the out type is FILE. */
 	char* out_file;
 	bool is_background;
 };

@@ -72,7 +72,6 @@ static int execute_pipeline(const struct command_line* line)
         perror("malloc");
         return 1;
     }
-
     while (head && head->type == EXPR_TYPE_COMMAND) 
     {
         int next_pipe[SIZEOF_PIPE] = {-1, -1};
@@ -189,16 +188,21 @@ static int execute_pipeline(const struct command_line* line)
         close(prev_pipe[1]);
     }
 
-    for (size_t i = 0; i < child_count; ++i) 
+    if(!line->is_background)
     {
-        if (i == child_count - 1) 
+        for (size_t i = 0; i < child_count; ++i) 
         {
-            waitpid(array[i], &status, 0);
-            exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+            if (i == child_count - 1) 
+            {
+                waitpid(array[i], &status, 0);
+                exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+            }
+            else 
+                waitpid(array[i], NULL, 0);
         }
-        else 
-            waitpid(array[i], NULL, 0);
-    }
+    } 
+    else 
+        exit_status = 0;
 
     free(array);
     return exit_status;
@@ -211,7 +215,6 @@ static int execute_command_line(const struct command_line* line)
 
     if (line->head->next && line->head->next->type == EXPR_TYPE_PIPE) 
         return execute_pipeline(line);
-
     if (line->head->type == EXPR_TYPE_COMMAND) 
     {
         const struct command* cmd = &line->head->cmd;
@@ -260,11 +263,12 @@ static int execute_command_line(const struct command_line* line)
         }
         else 
         {
-            int status;
-            waitpid(pid, &status, 0);
             if (fd != STDOUT_FILENO)
                 close(fd);
-
+            if(line->is_background)
+                return 0;
+            int status;
+            waitpid(pid, &status, 0);
             return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
         }
     }
@@ -299,4 +303,5 @@ int main(void)
     
     parser_delete(p);
     exit(exit_status);
+    return 0;
 }
