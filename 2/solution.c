@@ -30,6 +30,7 @@ static bool open_fd(int* fd, const struct command_line* line)
         flags |= O_APPEND;
     else
         flags |= O_TRUNC;
+
     *fd = open(line->out_file, flags, 0644);
     return *fd >= 0;
 }
@@ -52,7 +53,7 @@ static void execute_exit(const struct command* cmd, bool is_in_pipeline)
     int status = 0;
     if (cmd->arg_count > 0)
         status = atoi(cmd->args[0]);
-    
+
     if (!is_in_pipeline)
         exit(status);
     _exit(status);
@@ -63,7 +64,7 @@ static int execute_pipeline(const struct command_line* line)
     assert(line);
     int prev_pipe[SIZEOF_PIPE] = {-1, -1};
     const struct expr* head = line->head;
-    int status, exit_status = 0;
+    int status = 0, exit_status = 0;
     size_t child_count = 0, array_size = 32;
 
     pid_t* array = malloc(array_size * sizeof(pid_t));
@@ -72,10 +73,11 @@ static int execute_pipeline(const struct command_line* line)
         perror("malloc");
         return 1;
     }
+
     while (head && head->type == EXPR_TYPE_COMMAND) 
     {
         int next_pipe[SIZEOF_PIPE] = {-1, -1};
-        bool is_last_command = (!head->next) || (head->next->type != EXPR_TYPE_PIPE);
+        bool is_last_command = !head->next || head->next->type != EXPR_TYPE_PIPE;
 
         if (!is_last_command && pipe(next_pipe) < 0) 
         {
@@ -107,7 +109,7 @@ static int execute_pipeline(const struct command_line* line)
         else if (pid == 0) 
         {
             free(array);
-            
+
             if (prev_pipe[0] != -1) 
             {
                 dup2(prev_pipe[0], STDIN_FILENO);
@@ -120,22 +122,22 @@ static int execute_pipeline(const struct command_line* line)
                 close(next_pipe[0]);
                 dup2(next_pipe[1], STDOUT_FILENO);
                 close(next_pipe[1]);
-            }
+            } 
             else if (line->out_type != OUTPUT_TYPE_STDOUT) 
             {
-                int fd;
-                if (!open_fd(&fd, line)) 
+                int file_fd;
+                if (!open_fd(&file_fd, line)) 
                 {
                     perror("open");
                     exit(EXIT_FAILURE);
                 }
-                dup2(fd, STDOUT_FILENO);
-                close(fd);
+                dup2(file_fd, STDOUT_FILENO);
+                close(file_fd);
             }
 
-            if (next_pipe[0] != -1) 
+            if (next_pipe[0] != -1)
                 close(next_pipe[0]);
-            if (next_pipe[1] != -1) 
+            if (next_pipe[1] != -1)
                 close(next_pipe[1]);
 
             if (!strcmp(head->cmd.exe, "cd")) 
@@ -159,6 +161,7 @@ static int execute_pipeline(const struct command_line* line)
         else 
         {
             array[child_count++] = pid;
+
             if (prev_pipe[0] != -1) 
             {
                 close(prev_pipe[0]);
@@ -169,12 +172,12 @@ static int execute_pipeline(const struct command_line* line)
             {
                 prev_pipe[0] = next_pipe[0];
                 prev_pipe[1] = next_pipe[1];
-            }
+            } 
             else 
             {
-                if (next_pipe[0] != -1) 
+                if (next_pipe[0] != -1)
                     close(next_pipe[0]);
-                if (next_pipe[1] != -1) 
+                if (next_pipe[1] != -1)
                     close(next_pipe[1]);
             }
 
@@ -182,27 +185,24 @@ static int execute_pipeline(const struct command_line* line)
         }
     }
 
-    if (prev_pipe[0] != -1) 
-    {
+    if (prev_pipe[0] != -1)
         close(prev_pipe[0]);
+    if (prev_pipe[1] != -1)
         close(prev_pipe[1]);
+
+    if (line->is_background)
+    {
+        sleep(0);
+        free(array);
+        return 0;
     }
 
-    if(!line->is_background)
+    for (size_t i = 0; i < child_count; ++i)
     {
-        for (size_t i = 0; i < child_count; ++i) 
-        {
-            if (i == child_count - 1) 
-            {
-                waitpid(array[i], &status, 0);
-                exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
-            }
-            else 
-                waitpid(array[i], NULL, 0);
-        }
-    } 
-    else 
-        exit_status = 0;
+        waitpid(array[i], &status, 0);
+        if (i == child_count - 1)
+            exit_status = WIFEXITED(status) ? WEXITSTATUS(status) : 1;
+    }
 
     free(array);
     return exit_status;
@@ -213,8 +213,9 @@ static int execute_command_line(const struct command_line* line)
     assert(line);
     assert(line->head);
 
-    if (line->head->next && line->head->next->type == EXPR_TYPE_PIPE) 
+    if (line->head->next && line->head->next->type == EXPR_TYPE_PIPE)
         return execute_pipeline(line);
+
     if (line->head->type == EXPR_TYPE_COMMAND) 
     {
         const struct command* cmd = &line->head->cmd;
@@ -231,16 +232,6 @@ static int execute_command_line(const struct command_line* line)
             return 0;
         }
 
-        int fd = STDOUT_FILENO;
-        if (line->out_type != OUTPUT_TYPE_STDOUT) 
-        {
-            if (!open_fd(&fd, line)) 
-            {
-                perror("open");
-                return 1;
-            }
-        }
-
         pid_t pid = fork();
         if (pid < 0) 
         {
@@ -249,8 +240,15 @@ static int execute_command_line(const struct command_line* line)
         }
         else if (pid == 0) 
         {
-            if (fd != STDOUT_FILENO) 
+            int fd = STDOUT_FILENO;
+
+            if (line->out_type != OUTPUT_TYPE_STDOUT) 
             {
+                if (!open_fd(&fd, line)) 
+                {
+                    perror("open");
+                    exit(EXIT_FAILURE);
+                }
                 dup2(fd, STDOUT_FILENO);
                 close(fd);
             }
@@ -263,15 +261,19 @@ static int execute_command_line(const struct command_line* line)
         }
         else 
         {
-            if (fd != STDOUT_FILENO)
-                close(fd);
-            if(line->is_background)
+            if (line->is_background)
+            {
+                sleep(0);
                 return 0;
+            }
+
             int status;
             waitpid(pid, &status, 0);
+
             return WIFEXITED(status) ? WEXITSTATUS(status) : 1;
         }
     }
+
     return 0;
 }
 
@@ -281,8 +283,8 @@ int main(void)
     char buf[buf_size];
     int rc, exit_status = 0;
     struct parser* p = parser_new();
-    
-    while ((rc = read(STDIN_FILENO, buf, buf_size)) > 0) 
+
+    while ((rc = read(STDIN_FILENO, buf, buf_size)) >= 0) 
     {
         parser_feed(p, buf, rc);
         struct command_line* line = NULL;
@@ -291,17 +293,21 @@ int main(void)
             enum parser_error err = parser_pop_next(p, &line);
             if (err == PARSER_ERR_NONE && line == NULL)
                 break;
+
             if (err != PARSER_ERR_NONE) 
             {
                 fprintf(stderr, "Error: %d\n", (int)err);
                 continue;
             }
+
             exit_status = execute_command_line(line);
             command_line_delete(line);
         }
+
+        if (rc == 0)
+            break;
     }
-    
+
     parser_delete(p);
     exit(exit_status);
-    return 0;
 }
