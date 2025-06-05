@@ -14,7 +14,7 @@
 static char** build_args(const struct command* cmd)
 {
     assert(cmd);
-    char** args = malloc((cmd->arg_count + 2) * sizeof(char*));
+    char** args = (char**) malloc((cmd->arg_count + 2) * sizeof(char*));
     args[0] = cmd->exe;
     for (uint32_t i = 0; i < cmd->arg_count; ++i)
         args[i + 1] = cmd->args[i];
@@ -67,7 +67,7 @@ static int execute_pipeline(const struct command_line* line)
     int status = 0, exit_status = 0;
     size_t child_count = 0, array_size = 32;
 
-    pid_t* array = malloc(array_size * sizeof(pid_t));
+    pid_t* array = (pid_t*) malloc(array_size * sizeof(pid_t));
     if (!array) 
     {
         perror("malloc");
@@ -89,7 +89,7 @@ static int execute_pipeline(const struct command_line* line)
         if (child_count >= array_size) 
         {
             array_size *= 2;
-            pid_t* new_array = realloc(array, array_size * sizeof(pid_t));
+            pid_t* new_array = (pid_t*) realloc(array, array_size * sizeof(pid_t));
             if (!new_array) 
             {
                 perror("realloc");
@@ -192,7 +192,6 @@ static int execute_pipeline(const struct command_line* line)
 
     if (line->is_background)
     {
-        sleep(0);
         free(array);
         return 0;
     }
@@ -262,10 +261,7 @@ static int execute_command_line(const struct command_line* line)
         else 
         {
             if (line->is_background)
-            {
-                sleep(0);
                 return 0;
-            }
 
             int status;
             waitpid(pid, &status, 0);
