@@ -82,8 +82,7 @@ int thread_pool_delete(struct thread_pool* pool);
  *     - TPOOL_ERR_TOO_MANY_TASKS - pool has too many tasks
  *       already.
 */
-int
-thread_pool_push_task(struct thread_pool *pool, struct thread_task *task);
+int thread_pool_push_task(struct thread_pool* pool, struct thread_task* task);
 
 /** Thread pool task API. */
 
@@ -94,7 +93,7 @@ thread_pool_push_task(struct thread_pool *pool, struct thread_task *task);
  * @param arg Argument for @a function.
  *
  * @retval Always 0.
- */
+*/
 int thread_task_new(struct thread_task** task, thread_task_f function, void* arg);
 
 /**
@@ -119,9 +118,8 @@ bool thread_task_is_running(const struct thread_task* task);
  * @retval 0 Success.
  * @retval != 0 Error code.
  *     - TPOOL_ERR_TASK_NOT_PUSHED - task is not pushed to a pool.
- */
-int
-thread_task_join(struct thread_task *task, void **result);
+*/
+int thread_task_join(struct thread_task* task, void** result);
 
 #if NEED_TIMED_JOIN
 
@@ -150,9 +148,8 @@ thread_task_timed_join(struct thread_task *task, double timeout, void **result);
  * @retval != Error code.
  *     - TPOOL_ERR_TASK_IN_POOL - can not drop the task. It still
  *       is in a pool. Need to join it firstly.
- */
-int
-thread_task_delete(struct thread_task *task);
+*/
+int thread_task_delete(struct thread_task* task);
 
 #if NEED_DETACH
 
