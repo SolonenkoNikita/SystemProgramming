@@ -1,7 +1,10 @@
 #include "thread_pool.h"
+
 #include <pthread.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <time.h>
+#include <errno.h>
 
 struct thread_task 
 {
@@ -173,7 +176,7 @@ int thread_pool_push_task(struct thread_pool* pool, struct thread_task* task)
         pool->task_queue_tail->next = task;
         pool->task_queue_tail = task;
     }
-    pool->task_count++;
+    ++pool->task_count;
     
     if (!pool->is_end && pool->count < pool->max_count && 
         pool->running_count + pool->task_count > pool->count) 
@@ -241,7 +244,7 @@ int thread_task_delete(struct thread_task* task)
 {
     assert(task);
     pthread_mutex_lock(&task->mutex);
-    if (!task->is_finished && task->is_pushed && !task->is_detached)
+    if (!task->is_finished && task->is_pushed)
     {
         pthread_mutex_unlock(&task->mutex);
         return TPOOL_ERR_TASK_IN_POOL;
@@ -255,13 +258,65 @@ int thread_task_delete(struct thread_task* task)
 }
 
 #if NEED_DETACH
-int thread_task_detach(struct thread_task* task) {
-    return TPOOL_ERR_NOT_IMPLEMENTED;
+int thread_task_detach(struct thread_task* task) 
+{
+    assert(task);
+    pthread_mutex_lock(&task->mutex);
+    if(!task->is_pushed)
+    {
+        pthread_mutex_unlock(&task->mutex);
+        return TPOOL_ERR_TASK_NOT_PUSHED;
+    }
+    if (task->is_finished) 
+    {
+        pthread_mutex_unlock(&task->mutex);
+        thread_task_delete(task);
+        return 0;
+    }
+    task->is_detached = true;
+    pthread_mutex_unlock(&task->mutex);
+    return 0;
 }
 #endif
 
 #if NEED_TIMED_JOIN
-int thread_task_timed_join(struct thread_task* task, double timeout, void** result) {
-    return TPOOL_ERR_NOT_IMPLEMENTED;
+int thread_task_timed_join(struct thread_task* task, double timeout, void** result) 
+{
+    assert(task);
+    pthread_mutex_lock(&task->mutex);
+    if (!task->is_pushed) 
+    {
+        pthread_mutex_unlock(&task->mutex);
+        return TPOOL_ERR_TASK_NOT_PUSHED;
+    }
+    if (!task->is_finished) 
+    {
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += (time_t)timeout;
+        ts.tv_nsec += (long)((timeout - (time_t)timeout) * 1e9);
+        if (ts.tv_nsec >= 1000000000L) 
+        {
+            ++ts.tv_sec;
+            ts.tv_nsec -= 1000000000L;
+        }
+        
+        int res = pthread_cond_timedwait(&task->cond, &task->mutex, &ts);
+        if (res == ETIMEDOUT) 
+        {
+            pthread_mutex_unlock(&task->mutex);
+            return TPOOL_ERR_TIMEOUT;
+        }
+    }
+    
+    if (result)
+        *result = task->result;
+
+    task->is_pushed = false;
+    task->is_finished = false;
+    task->is_running = false;
+    
+    pthread_mutex_unlock(&task->mutex);
+    return 0;
 }
 #endif

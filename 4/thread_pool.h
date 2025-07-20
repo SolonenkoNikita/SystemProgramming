@@ -15,8 +15,8 @@
  * It is important to define these macros here, in the header, because it is
  * used by tests.
  */
-#define NEED_DETACH 0
-#define NEED_TIMED_JOIN 0
+#define NEED_DETACH 1
+#define NEED_TIMED_JOIN 1
 
 struct thread_pool;
 struct thread_task;
@@ -133,7 +133,7 @@ int thread_task_join(struct thread_task* task, void** result);
  * @retval != 0 Error code.
  *     - TPOOL_ERR_TASK_NOT_PUSHED - task is not pushed to a pool.
  *     - TPOOL_ERR_TIMEOUT - join timed out, nothing is done.
- */
+*/
 int thread_task_timed_join(struct thread_task* task, double timeout, void** result);
 
 #endif
@@ -161,7 +161,6 @@ int thread_task_delete(struct thread_task* task);
  *     - TPOOL_ERR_TASK_NOT_PUSHED - task is not pushed to a
  *       pool.
 */
-int
-thread_task_detach(struct thread_task *task);
+int thread_task_detach(struct thread_task* task);
 
 #endif
