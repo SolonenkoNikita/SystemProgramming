@@ -20,7 +20,6 @@
 
 struct thread_pool;
 struct thread_task;
-struct task_node;
 
 typedef void *(*thread_task_f)(void *);
 
@@ -135,8 +134,7 @@ int thread_task_join(struct thread_task* task, void** result);
  *     - TPOOL_ERR_TASK_NOT_PUSHED - task is not pushed to a pool.
  *     - TPOOL_ERR_TIMEOUT - join timed out, nothing is done.
  */
-int
-thread_task_timed_join(struct thread_task *task, double timeout, void **result);
+int thread_task_timed_join(struct thread_task* task, double timeout, void** result);
 
 #endif
 
